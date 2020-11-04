@@ -1,0 +1,12 @@
+{
+	"folders": [
+		{
+			"path": "gdal_beginning"
+		}
+	],
+	"settings": {
+		"files.associations": {
+			"iostream": "cpp"
+		}
+	}
+}
