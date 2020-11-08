@@ -21,7 +21,11 @@ void ReadRasterData(GDALRasterBand* rb, float* psl);
 
 int main(int argc, char *argv[])
 {
-    string filesPath = "/home/NIR/Data/tiles";
+    
+    string filesPath = "/home/NIR/Data/Reprojection_results";
+
+    if (argc > 1)
+        filesPath = argv[1];
 
     vector<string> filesFullNames;
 
@@ -55,7 +59,8 @@ int main(int argc, char *argv[])
         GDALClose(poDataset);
     }
 
-    std::cout << "Program ended!" << std::endl;
+    cout << "Total files opened: " << filesFullNames.size() << endl; 
+
     return 0;
 }
 
@@ -87,6 +92,11 @@ void PrintGDALDatasetInformation(GDALDataset* ds)
     else 
         cout << "No projection set" << endl;
 
+    if (ds->GetGCPProjection() != nullptr)
+        cout << "GCP projection is " << ds->GetGCPProjection() << endl;
+    else 
+        cout << "No gcp projection set" << endl;
+
     //cout << endl;
 
     if (ds->GetGeoTransform(adfGeoTransform) == CE_None)
@@ -103,7 +113,7 @@ void PrintGDALDatasetInformation(GDALDataset* ds)
     if (md != nullptr)
     {
         cout << "Metadata:" << endl;
-        for (char** pair = md; pair != nullptr; pair++)
+        for (char** pair = md; *pair != nullptr; pair++)
         {
             cout << "\t" << *pair << endl;
         }
