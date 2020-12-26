@@ -11,16 +11,13 @@ using namespace std;
 namespace fs = std::filesystem;
 
 void ImagePreparation(
-    const string& srcName, string dstPath
-);
+    const string& srcName, string dstPath);
 
 void SimpleReprojection(
-    const vector<string>& srcNames, const vector<string>& dstNames
-    );
+    const vector<string>& srcNames, const vector<string>& dstNames);
 
 void ReprojectionWithCreation(
-    const string& srcName, string dstPath
-    );
+    const string& srcName, string dstPath);
 
 void ParseSrcFileName(
     const string& name, double& x, double& y);
@@ -50,14 +47,14 @@ int main(int, char**)
     for (const auto entry : fs::directory_iterator(srcPath.c_str()))
         srcNames.push_back(entry.path());
 
+    //ReprojectionWithCreation(srcNames[0], dstPath);
     ReprojectionWithCreation(srcNames[0], dstPath);
 }
 
 
 
 void ImagePreparation(
-    const string& srcName, string dstPath
-)
+    const string& srcName, string dstPath)
 {
     GDALDriverH hDriver = nullptr;
     GDALDataType eDT;
@@ -82,6 +79,7 @@ void ImagePreparation(
     papszMetadata = poDriver->GetMetadata();
     if(CSLFetchBoolean(papszMetadata, GDAL_DCAP_CREATE, FALSE))
         printf("Driver %s supports Create() method.\n", pszFormat);
+        
     if(CSLFetchBoolean(papszMetadata, GDAL_DCAP_CREATECOPY, FALSE) )
         printf("Driver %s supports CreateCopy() method.\n", pszFormat);
     else
@@ -110,37 +108,38 @@ void ImagePreparation(
     double moscowLot = 37.6155600;
     double satHeight = 2000;
 
-    oGeoS.SetProjCS("GEOS / WGS84");
+    //oGeoS.SetProjCS("GEOS / WGS84");
     oGeoS.SetWellKnownGeogCS("WGS84");
-    oGeoS.SetGEOS(moscowLot, satHeight, 0, 0);
+    //oGeoS.SetGEOS(moscowLot, satHeight, 0, 0);
 
     char* dstWKT;
     oGeoS.exportToWkt(&dstWKT);
+    cout << dstWKT;
 
     dstDS->SetProjection(dstWKT);
     CPLFree(dstWKT);
 
 
-    double upperLeftX = 0;
-    double upperLeftY = 0;
+    // double upperLeftX = 0;
+    // double upperLeftY = 0;
 
-    ParseSrcFileName(
-        srcFileName, upperLeftX, upperLeftY);
+    // ParseSrcFileName(
+    //     srcFileName, upperLeftX, upperLeftY);
 
-    double resX = 2000.0 / 512.0;
-    double resY = -2000.0 / 512.0; 
+    // double resX = 2000.0 / 512.0;
+    // double resY = -2000.0 / 512.0; 
 
-    double adfTrans[6]
-    {
-        upperLeftX,
-        resX,
-        0,
-        upperLeftY,
-        0,
-        resY
-    };
+    // double adfTrans[6]
+    // {
+    //     upperLeftX,
+    //     resX,
+    //     0,
+    //     upperLeftY,
+    //     0,
+    //     resY
+    // };
 
-    dstDS->SetGeoTransform(adfTrans);
+    // dstDS->SetGeoTransform(adfTrans);
 
 
     GDALClose(dstDS);
@@ -228,8 +227,7 @@ void ReprojectionWithCreation(const string& srcName, string dstPath)
 
     void *hTransformArg = nullptr;
     hTransformArg = GDALCreateGenImgProjTransformer(
-        hSrcDS, pszSrcWKT, NULL, pszDstWKT, FALSE, 0, 1
-        );
+        hSrcDS, pszSrcWKT, NULL, pszDstWKT, FALSE, 0, 1);
 
     double adfDstGeoTransform[6];
     
@@ -239,8 +237,7 @@ void ReprojectionWithCreation(const string& srcName, string dstPath)
     CPLErr eErr;
     eErr = GDALSuggestedWarpOutput(
         hSrcDS, GDALGenImgProjTransform, hTransformArg,
-        adfDstGeoTransform, &nPixels, &nLines
-    );
+        adfDstGeoTransform, &nPixels, &nLines);
     GDALDestroyGenImgProjTransformer(hTransformArg);
 
 
@@ -253,10 +250,28 @@ void ReprojectionWithCreation(const string& srcName, string dstPath)
     GDALSetProjection(hDstDS, pszDstWKT);
     GDALSetGeoTransform(hDstDS, adfDstGeoTransform);
 
+    GDALRasterBandH srcRB = GDALGetRasterBand(hSrcDS,1);
+    GDALRasterBandH dstRB = GDALGetRasterBand(hDstDS,1);
+
     GDALColorTableH hCT;
-    hCT = GDALGetRasterColorTable(GDALGetRasterBand(hSrcDS,1));
+    hCT = GDALGetRasterColorTable(srcRB);
     if( hCT != NULL )
-        GDALSetRasterColorTable(GDALGetRasterBand(hDstDS,1), hCT);
+        GDALSetRasterColorTable(dstRB, hCT);
+
+
+
+    GByte buffer[nPixels * nLines];
+    int srcX = GDALGetRasterBandXSize(srcRB);
+    int srcY = GDALGetRasterBandYSize(srcRB);
+
+    GDALRasterIO(srcRB, GF_Read,
+        0, 0, srcX, srcY, 
+        buffer, nPixels, nLines, 
+        eDT, 0, 0);
+
+    GDALRasterIO(dstRB, GF_Write, 
+        0, 0, nPixels, nLines, buffer, 
+        nPixels, nLines, eDT, 0, 0);
 
     GDALClose(hSrcDS);
     GDALClose(hDstDS);
