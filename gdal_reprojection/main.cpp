@@ -14,13 +14,19 @@ void ImagePreparation(
     const string& srcName, string dstPath);
 
 void SimpleReprojection(
-    const vector<string>& srcNames, const vector<string>& dstNames);
+    const string& srcName, string dstPath);
 
 void ReprojectionWithCreation(
     const string& srcName, string dstPath);
 
+void ReprojectionWithCreation2(
+    const string& srcName, string dstPath);
+
 void ParseSrcFileName(
     const string& name, double& x, double& y);
+
+
+const int UTMZone = 37;
 
 
 int main(int, char**) 
@@ -41,14 +47,16 @@ int main(int, char**)
 
     GDALAllRegister();    
 
-    ImagePreparation(origNames[0], srcPath);
+    for (auto origName : origNames)
+        ImagePreparation(origName, srcPath);
 
     vector<string> srcNames;
     for (const auto entry : fs::directory_iterator(srcPath.c_str()))
         srcNames.push_back(entry.path());
 
-    //ReprojectionWithCreation(srcNames[0], dstPath);
-    ReprojectionWithCreation(srcNames[0], dstPath);
+    for (auto srcName : srcNames)
+        ReprojectionWithCreation(srcName, dstPath);
+        //SimpleReprojection(srcNames[0], dstPath);
 }
 
 
@@ -120,79 +128,71 @@ void ImagePreparation(
     CPLFree(dstWKT);
 
 
-    // double upperLeftX = 0;
-    // double upperLeftY = 0;
-
-    // ParseSrcFileName(
-    //     srcFileName, upperLeftX, upperLeftY);
-
-    // double resX = 2000.0 / 512.0;
-    // double resY = -2000.0 / 512.0; 
-
-    // double adfTrans[6]
-    // {
-    //     upperLeftX,
-    //     resX,
-    //     0,
-    //     upperLeftY,
-    //     0,
-    //     resY
-    // };
-
-    // dstDS->SetGeoTransform(adfTrans);
-
-
     GDALClose(dstDS);
 }
 
 
 
 void SimpleReprojection(
-    vector<string> srcNames, vector<string> dstNames)
+    const string& srcName, string dstPath)
 {
-    GDALDatasetH hSrcDS = nullptr;
-    GDALDatasetH hDstDS = nullptr;
+    GDALDatasetH  hSrcDS, hDstDS;
 
-    hSrcDS = GDALOpen(srcNames[0].c_str(), GA_ReadOnly);
-    hDstDS = GDALOpen(dstNames[0].c_str(), GA_Update);
+    // Open input and output files.
+    int pos = srcName.find_last_of("/");
+    dstPath += srcName.substr(pos);
 
-    GDALWarpOptions* psWarpOptions = GDALCreateWarpOptions();
+    GDALAllRegister();
+    hSrcDS = GDALOpen( srcName.c_str(), GA_ReadOnly );
+    hDstDS = GDALCreateCopy(
+        GDALGetDriverByName("GTiff") , 
+        dstPath.c_str(), hSrcDS, FALSE, 
+        NULL, NULL, NULL);
 
+    OGRSpatialReference oSRS;
+    char *pszDstWKT;
+    oSRS.SetUTM(11, TRUE);
+    oSRS.SetWellKnownGeogCS("WGS84");
+    oSRS.exportToWkt(&pszDstWKT);
+
+    // cout << GDALGetProjectionRef(hDstDS) << endl << endl;
+    GDALSetProjection(hDstDS, pszDstWKT);
+
+    // Setup warp options.
+    GDALWarpOptions *psWarpOptions = GDALCreateWarpOptions();
     psWarpOptions->hSrcDS = hSrcDS;
     psWarpOptions->hDstDS = hDstDS;
-
     psWarpOptions->nBandCount = 1;
-
-    psWarpOptions->panSrcBands = 
-        (int*) CPLMalloc(sizeof(int) * psWarpOptions->nBandCount);
+    psWarpOptions->panSrcBands =
+        (int *) CPLMalloc(sizeof(int) * psWarpOptions->nBandCount);
     psWarpOptions->panSrcBands[0] = 1;
-
-    psWarpOptions->panDstBands = 
-        (int*) CPLMalloc(sizeof(int) * psWarpOptions->nBandCount);
+    psWarpOptions->panDstBands =
+        (int *) CPLMalloc(sizeof(int) * psWarpOptions->nBandCount);
     psWarpOptions->panDstBands[0] = 1;
+    psWarpOptions->pfnProgress = GDALTermProgress;
 
+    // Establish reprojection transformer.
     psWarpOptions->pTransformerArg =
-        GDALCreateGenImgProjTransformer(
-            hSrcDS, GDALGetProjectionRef(hSrcDS),
-            hDstDS, GDALGetProjectionRef(hDstDS),
-            FALSE, 0.0, 1
-            );
-
+        GDALCreateGenImgProjTransformer(hSrcDS,
+                                        GDALGetProjectionRef(hSrcDS),
+                                        hDstDS,
+                                        GDALGetProjectionRef(hDstDS),
+                                        FALSE, 0.0, 1);
     psWarpOptions->pfnTransformer = GDALGenImgProjTransform;
 
+    //cout << GDALGetProjectionRef(hDstDS) << endl << endl;
 
+    // Initialize and execute the warp operation.
     GDALWarpOperation oOperation;
-    
-    oOperation.Initialize(psWarpOptions);
-    oOperation.ChunkAndWarpImage(0, 0,
-        GDALGetRasterXSize(hDstDS), GDALGetRasterYSize(hDstDS)
-    );
+    oOperation.Initialize( psWarpOptions );
+    oOperation.ChunkAndWarpImage( 0, 0,
+                                GDALGetRasterXSize( hDstDS ),
+                                GDALGetRasterYSize( hDstDS ) );
+    GDALDestroyGenImgProjTransformer( psWarpOptions->pTransformerArg );
+    GDALDestroyWarpOptions( psWarpOptions );
 
-    GDALDestroyTransformer(psWarpOptions->pTransformerArg);
-    GDALDestroyWarpOptions(psWarpOptions);
-
-    GDALClose(hSrcDS);
-    GDALClose(hDstDS);
+    GDALClose( hDstDS );
+    GDALClose( hSrcDS );
 }
 
 void ReprojectionWithCreation(const string& srcName, string dstPath)
@@ -221,7 +221,7 @@ void ReprojectionWithCreation(const string& srcName, string dstPath)
     //Check empty or not
 
     OGRSpatialReference oSRS;
-    oSRS.SetUTM(11, TRUE);
+    oSRS.SetUTM(UTMZone, TRUE);
     oSRS.SetWellKnownGeogCS("WGS84");
     oSRS.exportToWkt(&pszDstWKT);
 
@@ -241,11 +241,17 @@ void ReprojectionWithCreation(const string& srcName, string dstPath)
     GDALDestroyGenImgProjTransformer(hTransformArg);
 
 
+    // Создание нового tiff
     int pos = srcName.find_last_of("/");
     dstPath += srcName.substr(pos);
     hDstDS = GDALCreate(
         hDriver, dstPath.c_str(), nPixels, nLines, 
         GDALGetRasterCount(hSrcDS), eDT, NULL);
+
+    // hDstDS = GDALCreateCopy(
+    //     GDALGetDriverByName("GTiff") , 
+    //     dstPath.c_str(), hSrcDS, FALSE, 
+    //     NULL, NULL, NULL);
 
     GDALSetProjection(hDstDS, pszDstWKT);
     GDALSetGeoTransform(hDstDS, adfDstGeoTransform);
@@ -259,10 +265,9 @@ void ReprojectionWithCreation(const string& srcName, string dstPath)
         GDALSetRasterColorTable(dstRB, hCT);
 
 
-
-    GByte buffer[nPixels * nLines];
     int srcX = GDALGetRasterBandXSize(srcRB);
     int srcY = GDALGetRasterBandYSize(srcRB);
+    GByte buffer[nPixels * nLines];
 
     GDALRasterIO(srcRB, GF_Read,
         0, 0, srcX, srcY, 
@@ -277,6 +282,64 @@ void ReprojectionWithCreation(const string& srcName, string dstPath)
     GDALClose(hDstDS);
 }
 
+void ReprojectionWithCreation2(const string& srcName, string dstPath)
+{
+    GDALDriverH hDriver = nullptr;
+    GDALDataType eDT;
+
+    GDALDatasetH hSrcDS = nullptr;
+    GDALDatasetH hDstDS = nullptr;
+
+    hSrcDS = GDALOpen(srcName.c_str(), GA_ReadOnly);
+    //CPLAssert(hSrcDS != NULL)
+    if (hSrcDS == nullptr)
+    {
+        cout << "ReprojectionWithCreation: hSrcDs is null" << endl;
+        return;
+    }
+
+    eDT = GDALGetRasterDataType(GDALGetRasterBand(hSrcDS,1));
+    hDriver = GDALGetDriverByName( "GTiff" );
+
+    const char* pszSrcWKT = nullptr;
+    char* pszDstWKT = nullptr;
+
+    pszSrcWKT = GDALGetProjectionRef(hSrcDS);
+    //Check empty or not
+
+    OGRSpatialReference oSRS;
+    oSRS.SetUTM(UTMZone, TRUE);
+    oSRS.SetWellKnownGeogCS("WGS84");
+    oSRS.exportToWkt(&pszDstWKT);
+
+    void *hTransformArg = nullptr;
+    hTransformArg = GDALCreateGenImgProjTransformer(
+        hSrcDS, pszSrcWKT, NULL, pszDstWKT, FALSE, 0, 1);
+
+    double adfDstGeoTransform[6];
+    
+    int nPixels = 0;
+    int nLines = 0;
+
+    CPLErr eErr;
+    eErr = GDALSuggestedWarpOutput(
+        hSrcDS, GDALGenImgProjTransform, hTransformArg,
+        adfDstGeoTransform, &nPixels, &nLines);
+    GDALDestroyGenImgProjTransformer(hTransformArg);
+
+
+    // Создание нового tiff
+    int pos = srcName.find_last_of("/");
+    dstPath += srcName.substr(pos);
+    hDstDS = GDALCreateCopy(
+        hDriver, dstPath.c_str(), hSrcDS, FALSE, NULL, NULL, NULL);
+
+    GDALSetProjection(hDstDS, pszDstWKT);
+    GDALSetGeoTransform(hDstDS, adfDstGeoTransform);
+
+    GDALClose(hSrcDS);
+    GDALClose(hDstDS);
+}
 
 void ParseSrcFileName(const string& name, double& x, double& y)
 {

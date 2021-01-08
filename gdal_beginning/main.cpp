@@ -103,7 +103,8 @@ void PrintGDALDatasetInformation(GDALDataset* ds)
     {
         cout << "Geo transform:\n"
              << "\tOrigin: " << adfGeoTransform[0] << ", " << adfGeoTransform[3] << "\n"
-             << "\tPixel size: " << adfGeoTransform[1] << ", " << adfGeoTransform[5] << "\n";
+             << "\tPixel size: " << adfGeoTransform[1] << ", " << adfGeoTransform[5] << "\n"
+             << "\tRotations: " << adfGeoTransform[2] << ", " << adfGeoTransform[4] << "\n";
     }
     else
         cout << "Couldn't get geo transform" << "\n";
